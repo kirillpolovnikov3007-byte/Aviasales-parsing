@@ -1,171 +1,117 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 1,
-   "id": "118f2837-1f73-4172-aafb-22d40daac178",
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stdout",
-     "output_type": "stream",
-     "text": [
-      "[20:47:56] Сохранено 100 строк для MOW -> SVX\n",
-      "[20:47:57] Сохранено 100 строк для SVX -> MOW\n"
-     ]
+import os
+import sqlite3
+import requests
+from datetime import datetime
+
+# Берем токен из секретов окружения GitHub
+TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN")
+
+DB_NAME = 'flights_history.db'
+ORIGIN = "MOW"
+DESTINATION = "SVX"
+
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS prices_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        search_date TEXT,          
+        origin TEXT,               
+        destination TEXT,          
+        departure_at TEXT,         
+        departure_date TEXT,       
+        return_at TEXT,            
+        airline TEXT,              
+        flight_number TEXT,        
+        transfers INTEGER,         
+        price INTEGER,             
+        days_to_departure INTEGER  
+    )
+    ''')
+    conn.commit()
+    conn.close()
+
+def fetch_and_save_airfares(origin, destination, token):
+    if not token:
+        print("Ошибка: Токен Travelpayouts не найден в переменных окружения!")
+        return
+
+    url = "https://travelpayouts.com"
+    headers = {
+        "X-Access-Token": token,
+        "Accept-Encoding": "gzip, deflate"
     }
-   ],
-   "source": [
-    "import os\n",
-    "import sqlite3\n",
-    "import requests\n",
-    "import pandas as pd\n",
-    "from datetime import datetime\n",
-    "from dotenv import load_dotenv\n",
-    "\n",
-    "# Загружаем переменные окружения из файла .env (создайте рядом файл .env с текстом: TRAVELPAYOUTS_TOKEN=ваш_токен)\n",
-    "load_dotenv()\n",
-    "TOKEN = os.getenv(\"TRAVELPAYOUTS_TOKEN\", \"2b87b4b8d0a1c10814b341cf846d9686\") # Фолбэк на ваш токен\n",
-    "\n",
-    "DB_NAME = 'flights_history.db'\n",
-    "ORIGIN = \"MOW\"\n",
-    "DESTINATION = \"SVX\"\n",
-    "\n",
-    "def init_db():\n",
-    "    \"\"\"Инициализация базы данных с расширенной структурой.\"\"\"\n",
-    "    conn = sqlite3.connect(DB_NAME)\n",
-    "    cursor = conn.cursor()\n",
-    "    cursor.execute('''\n",
-    "    CREATE TABLE IF NOT EXISTS prices_history (\n",
-    "        id INTEGER PRIMARY KEY AUTOINCREMENT,\n",
-    "        search_date TEXT,          -- Когда собрали данные (YYYY-MM-DD HH:MM:SS)\n",
-    "        origin TEXT,               -- ИАТА код вылета\n",
-    "        destination TEXT,          -- ИАТА код прилета\n",
-    "        departure_at TEXT,         -- Дата и время вылета (ISO)\n",
-    "        departure_date TEXT,       -- Чистая дата вылета (для удобства группировки YYYY-MM-DD)\n",
-    "        return_at TEXT,            -- Дата возвращения\n",
-    "        airline TEXT,              -- Авиакомпания\n",
-    "        flight_number TEXT,        -- Номер рейса (лучше TEXT, бывают буквы)\n",
-    "        transfers INTEGER,         -- Пересадки\n",
-    "        price INTEGER,             -- Цена\n",
-    "        days_to_departure INTEGER  -- Главная метрика: за сколько дней до вылета смотрим цену\n",
-    "    )\n",
-    "    ''')\n",
-    "    conn.commit()\n",
-    "    conn.close()\n",
-    "\n",
-    "def fetch_and_save_airfares(origin, destination, token):\n",
-    "    url = \"https://api.travelpayouts.com/aviasales/v3/prices_for_dates\"\n",
-    "    headers = {\n",
-    "        \"X-Access-Token\": token,\n",
-    "        \"Accept-Encoding\": \"gzip, deflate\"\n",
-    "    }\n",
-    "    \n",
-    "    # Чтобы собирать глубокие данные, не ограничиваемся текущим месяцем.\n",
-    "    # Оставив departure_at пустым или задав период, мы получаем более широкую картину.\n",
-    "    params = {\n",
-    "        \"origin\": origin,\n",
-    "        \"destination\": destination,\n",
-    "        \"currency\": \"rub\",\n",
-    "        \"one_way\": \"true\", # Для продуктового анализа проще анализировать One-Way (туда и обратно отдельно)\n",
-    "        \"limit\": 100        # Берем больше записей для хорошей выборки\n",
-    "    }\n",
-    "    \n",
-    "    try:\n",
-    "        response = requests.get(url, headers=headers, params=params, timeout=10)\n",
-    "        if response.status_code != 200:\n",
-    "            print(f\"Ошибка API {response.status_code}: {response.text[:200]}\")\n",
-    "            return\n",
-    "    except requests.exceptions.RequestException as e:\n",
-    "        print(f\"Ошибка сети при запросе {origin}->{destination}: {e}\")\n",
-    "        return\n",
-    "        \n",
-    "    data = response.json().get('data', [])\n",
-    "    if not data:\n",
-    "        print(f\"Данные от API для {origin}->{destination} пусты.\")\n",
-    "        return\n",
-    "\n",
-    "    conn = sqlite3.connect(DB_NAME)\n",
-    "    cursor = conn.cursor()\n",
-    "    \n",
-    "    now = datetime.now()\n",
-    "    current_search_time = now.strftime('%Y-%m-%d %H:%M:%S')\n",
-    "    current_search_date = now.date()\n",
-    "    \n",
-    "    records_to_insert = []\n",
-    "    for item in data:\n",
-    "        dep_at_str = item.get('departure_at', '')\n",
-    "        if not dep_at_str:\n",
-    "            continue\n",
-    "            \n",
-    "        # Парсим дату вылета для расчета дней до вылета\n",
-    "        try:\n",
-    "            # API возвращает '2026-08-15T10:20:00+03:00' или '2026-08-15'\n",
-    "            dep_date_str = dep_at_str.split('T')[0]\n",
-    "            dep_date = datetime.strptime(dep_date_str, '%Y-%m-%d').date()\n",
-    "            days_to_departure = (dep_date - current_search_date).days\n",
-    "        except Exception:\n",
-    "            dep_date_str = None\n",
-    "            days_to_departure = None\n",
-    "\n",
-    "        records_to_insert.append((\n",
-    "            current_search_time,\n",
-    "            item.get('origin'),\n",
-    "            item.get('destination'),\n",
-    "            dep_at_str,\n",
-    "            dep_date_str,\n",
-    "            item.get('return_at'),\n",
-    "            item.get('airline'),\n",
-    "            str(item.get('flight_number', '')), # Приводим к строке\n",
-    "            item.get('transfers'),\n",
-    "            item.get('price'),\n",
-    "            days_to_departure\n",
-    "        ))\n",
-    "        \n",
-    "    cursor.executemany('''\n",
-    "    INSERT INTO prices_history \n",
-    "    (search_date, origin, destination, departure_at, departure_date, return_at, airline, flight_number, transfers, price, days_to_departure)\n",
-    "    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n",
-    "    ''', records_to_insert)\n",
-    "    \n",
-    "    conn.commit()\n",
-    "    conn.close()\n",
-    "    print(f\"[{datetime.now().strftime('%H:%M:%S')}] Сохранено {len(records_to_insert)} строк для {origin} -> {destination}\")\n",
-    "\n",
-    "if __name__ == \"__main__\":\n",
-    "    init_db()\n",
-    "    fetch_and_save_airfares(ORIGIN, DESTINATION, TOKEN)\n",
-    "    fetch_and_save_airfares(DESTINATION, ORIGIN, TOKEN)\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "f79af146-9379-4f2f-b97e-09808a3379e6",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3 (ipykernel)",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.12.10"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+    
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "currency": "rub",
+        "one_way": "true", 
+        "limit": 100        
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        if response.status_code != 200:
+            print(f"Ошибка API {response.status_code}: {response.text[:200]}")
+            return
+    except requests.exceptions.RequestException as e:
+        print(f"Ошибка сети: {e}")
+        return
+        
+    data = response.json().get('data', [])
+    if not data:
+        print(f"Данные от API для {origin}->{destination} пусты.")
+        return
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    now = datetime.now()
+    current_search_time = now.strftime('%Y-%m-%d %H:%M:%S')
+    current_search_date = now.date()
+    
+    records_to_insert = []
+    for item in data:
+        dep_at_str = item.get('departure_at', '')
+        if not dep_at_str:
+            continue
+            
+        try:
+            # Извлекаем 'YYYY-MM-DD' из строки вроде '2026-08-15T10:20:00+03:00'
+            dep_date_str = dep_at_str.split('T')[0]
+            dep_date = datetime.strptime(dep_date_str, '%Y-%m-%d').date()
+            days_to_departure = (dep_date - current_search_date).days
+        except Exception as e:
+            dep_date_str = None
+            days_to_departure = None
+
+        records_to_insert.append((
+            current_search_time,
+            item.get('origin'),
+            item.get('destination'),
+            dep_at_str,
+            dep_date_str,
+            item.get('return_at'),
+            item.get('airline'),
+            str(item.get('flight_number', '')), 
+            item.get('transfers'),
+            item.get('price'),
+            days_to_departure
+        ))
+        
+    cursor.executemany('''
+    INSERT INTO prices_history 
+    (search_date, origin, destination, departure_at, departure_date, return_at, airline, flight_number, transfers, price, days_to_departure)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', records_to_insert)
+    
+    conn.commit()
+    conn.close()
+    print(f"Успешно сохранено {len(records_to_insert)} строк для {origin} -> {destination}")
+
+if __name__ == "__main__":
+    init_db()
+    fetch_and_save_airfares(ORIGIN, DESTINATION, TOKEN)
+    fetch_and_save_airfares(DESTINATION, ORIGIN, TOKEN)
