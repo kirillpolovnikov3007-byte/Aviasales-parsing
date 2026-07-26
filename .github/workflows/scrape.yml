@@ -1,1 +1,38 @@
+name: Auto Airfare Scraper
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-scraper:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install requests pandas
+
+    - name: Run Scraper Script
+      env:
+        TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
+      run: python scraper.py
+
+    - name: Commit and Push DB Changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@://github.com"
+        git add flights_history.db
+        git diff-index --quiet HEAD || git commit -m "Auto-update flight prices: $(date +'%Y-%m-%d %H:%M')"
+        git push
 
