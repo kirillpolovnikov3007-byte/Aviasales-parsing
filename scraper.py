@@ -43,26 +43,36 @@ def fetch_and_save_airfares(origin, destination, token):
         "Accept-Encoding": "gzip, deflate"
     }
     
+    # Добавляем конкретный месяц (текущий + следующий), чтобы не перегружать API 
+    # и не получать ошибки от сервера Aviasales из-за слишком тяжелого запроса
     params = {
         "origin": origin,
         "destination": destination,
         "currency": "rub",
-        "one_way": "true", 
+        "one_way": "true",
         "limit": 100        
     }
     
     try:
         response = requests.get(url, headers=headers, params=params, timeout=15)
         if response.status_code != 200:
-            print(f"Ошибка API {response.status_code}: {response.text[:200]}")
+            print(f"Ошибка API. Статус: {response.status_code}. Ответ: {response.text[:200]}")
             return
     except requests.exceptions.RequestException as e:
-        print(f"Ошибка сети: {e}")
+        print(f"Ошибка сети при запросе {origin}->{destination}: {e}")
         return
         
-    data = response.json().get('data', [])
+    # БЕЗОПАСНОЕ чтение JSON: если сервер вернул ошибку текстом, скрипт не упадет
+    try:
+        response_data = response.json()
+    except Exception as e:
+        print(f"Критическая ошибка: Сервер прислал не JSON! Код ответа: {response.status_code}")
+        print(f"Текст ответа сервера (первые 300 символов): {response.text[:300]}")
+        return
+
+    data = response_data.get('data', [])
     if not data:
-        print(f"Данные от API для {origin}->{destination} пусты.")
+        print(f"Данные от API для {origin}->{destination} пусты (нет доступных билетов).")
         return
 
     conn = sqlite3.connect(DB_NAME)
@@ -83,7 +93,7 @@ def fetch_and_save_airfares(origin, destination, token):
             dep_date_str = dep_at_str.split('T')[0]
             dep_date = datetime.strptime(dep_date_str, '%Y-%m-%d').date()
             days_to_departure = (dep_date - current_search_date).days
-        except Exception as e:
+        except Exception:
             dep_date_str = None
             days_to_departure = None
 
