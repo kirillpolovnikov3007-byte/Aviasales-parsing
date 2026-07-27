@@ -2,8 +2,9 @@ name: Auto Airfare Scraper
 
 on:
   schedule:
+    # Запуск каждый день в 06:00 UTC (Проверяйте разницу с вашим часовым поясом!)
     - cron: '0 6 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет вам запустить парсер вручную кнопкой на GitHub
 
 jobs:
   run-scraper:
@@ -13,10 +14,10 @@ jobs:
 
     steps:
     - name: Checkout repository code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4 # Обновлено до v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5 # Обновлено до v5
       with:
         python-version: '3.10'
 
@@ -31,8 +32,7 @@ jobs:
     - name: Commit and Push DB Changes
       run: |
         git config --global user.name "github-actions[bot]"
-        git config --global user.email "41898282+github-actions[bot]@://github.com"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git add flights_history.db
-        git diff-index --quiet HEAD || git commit -m "Auto-update flight prices: $(date +'%Y-%m-%d %H:%M')"
-        git push
-
+        # Если изменений в базе нет, команда не упадет с ошибкой, а просто пропустит шаг
+        git diff-index --quiet HEAD || (git commit -m "Auto-update flight prices: $(date +'%Y-%m-%d %H:%M')" && git push)
