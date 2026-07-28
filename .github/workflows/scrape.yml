@@ -2,7 +2,7 @@ name: Auto Airfare Scraper
 
 on:
   schedule:
-    # Запуск каждый день в 06:00 UTC (Проверяйте разницу с вашим часовым поясом!)
+    # Запуск каждый день в 06:00 UTC
     - cron: '0 6 * * *'
   workflow_dispatch: # Позволяет вам запустить парсер вручную кнопкой на GitHub
 
@@ -14,10 +14,14 @@ jobs:
 
     steps:
     - name: Checkout repository code
-      uses: actions/checkout@v4 # Обновлено до v4
+      # Используем v4 с фиксом под Node 24 (или v5, если вышла)
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Гарантирует корректную работу git diff
 
     - name: Set up Python
-      uses: actions/setup-python@v5 # Обновлено до v5
+      # Рекомендуется проверить обновления для setup-python под Node 24
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
@@ -34,5 +38,12 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git add flights_history.db
-        # Если изменений в базе нет, команда не упадет с ошибкой, а просто пропустит шаг
-        git diff-index --quiet HEAD || (git commit -m "Auto-update flight prices: $(date +'%Y-%m-%d %H:%M')" && git push)
+        
+        # Разворачиваем логику, чтобы видеть реальный результат в логах GitHub
+        if ! git diff-index --quiet HEAD; then
+          echo "Обнаружены изменения в flights_history.db. Создаем коммит..."
+          git commit -m "Auto-update flight prices: $(date +'%Y-%m-%d %H:%M')"
+          git push
+        else
+          echo "Изменений в базе данных не обнаружено. Пропускаем коммит."
+        fi
