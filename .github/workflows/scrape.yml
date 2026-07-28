@@ -2,8 +2,8 @@ name: Auto Airfare Scraper
 
 on:
   schedule:
-    # Запуск каждый день в 06:00 UTC
-    - cron: '0 6 * * *'
+    # Запуск каждый день в 08:00 UTC
+    - cron: '0 8 * * *'
   workflow_dispatch: # Позволяет вам запустить парсер вручную кнопкой на GitHub
 
 jobs:
