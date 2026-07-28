@@ -37,18 +37,20 @@ def fetch_and_save_airfares(origin, destination, token):
         print("Ошибка: Токен Travelpayouts не найден в переменных окружения!")
         return
 
-    url = "https://travelpayouts.com"
+    # ИСПРАВЛЕНО: Используем правильный эндпоинт цен Aviasales API v3
+    url = "https://api.travelpayouts.com/aviasales/v3/prices_for_dates"
+    
     headers = {
         "X-Access-Token": token,
         "Accept-Encoding": "gzip, deflate"
     }
     
-    # Добавляем конкретный месяц (текущий + следующий), чтобы не перегружать API 
-    # и не получать ошибки от сервера Aviasales из-за слишком тяжелого запроса
     params = {
         "origin": origin,
         "destination": destination,
         "currency": "rub",
+        "unique": "false",  # возвращать ли только самые дешевые билеты
+        "sorting": "price", # сортировка по цене
         "one_way": "true",
         "limit": 100        
     }
@@ -62,7 +64,6 @@ def fetch_and_save_airfares(origin, destination, token):
         print(f"Ошибка сети при запросе {origin}->{destination}: {e}")
         return
         
-    # БЕЗОПАСНОЕ чтение JSON: если сервер вернул ошибку текстом, скрипт не упадет
     try:
         response_data = response.json()
     except Exception as e:
@@ -70,6 +71,7 @@ def fetch_and_save_airfares(origin, destination, token):
         print(f"Текст ответа сервера (первые 300 символов): {response.text[:300]}")
         return
 
+    # В API v3 данные приходят в поле 'data', структура совпадает с вашим циклом
     data = response_data.get('data', [])
     if not data:
         print(f"Данные от API для {origin}->{destination} пусты (нет доступных билетов).")
@@ -89,7 +91,6 @@ def fetch_and_save_airfares(origin, destination, token):
             continue
             
         try:
-            # Извлекаем 'YYYY-MM-DD' из строки вроде '2026-08-15T10:20:00+03:00'
             dep_date_str = dep_at_str.split('T')[0]
             dep_date = datetime.strptime(dep_date_str, '%Y-%m-%d').date()
             days_to_departure = (dep_date - current_search_date).days
