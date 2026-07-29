@@ -26,8 +26,10 @@ jobs:
         python-version: '3.10'
 
     - name: Install dependencies
-      run: pip install requests pandas
-
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests python-dotenv
+        
     - name: Run Scraper Script
       env:
         TRAVELPAYOUTS_TOKEN: ${{ secrets.TRAVELPAYOUTS_TOKEN }}
