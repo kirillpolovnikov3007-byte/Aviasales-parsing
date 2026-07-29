@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 # Загружаем переменные окружения из файла .env (создайте рядом файл .env с текстом: TRAVELPAYOUTS_TOKEN=ваш_токен)
 load_dotenv()
-TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN", "2b87b4b8d0a1c10814b341cf846d9686") # Фолбэк на ваш токен
+TOKEN = os.getenv("TRAVELPAYOUTS_TOKEN")
+
+if not TOKEN:
+    raise ValueError("Критическая ошибка: Переменная TRAVELPAYOUTS_TOKEN не передана!")
 
 DB_NAME = 'flights_history.db'
 ORIGIN = "MOW"
