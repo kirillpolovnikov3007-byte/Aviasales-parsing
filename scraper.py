@@ -1,7 +1,6 @@
 import os
 import sqlite3
 import requests
-import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 
